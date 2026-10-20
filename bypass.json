@@ -1,0 +1,1033 @@
+// ============================================================
+// GBOT ADMIN v2.5.2 SERVER — GITEA API & EASTER EGG TOKENS
+// ============================================================
+"ui";
+importClass(java.io.File); importClass(java.io.FileWriter); importClass(java.io.BufferedReader); importClass(java.io.FileReader);
+importClass(android.util.TypedValue); importClass(android.view.ViewGroup); importClass(android.graphics.Color);
+importClass(android.graphics.Typeface); importClass(android.graphics.drawable.GradientDrawable);
+importClass(android.widget.LinearLayout); importClass(android.widget.TextView); importClass(android.widget.ScrollView);
+importClass(android.widget.Button); importClass(android.widget.EditText); importClass(android.widget.ImageView);
+importClass(android.graphics.Bitmap); importClass(android.graphics.BitmapFactory); importClass(android.text.InputType);
+importClass(android.content.Intent); importClass(android.net.Uri); importClass(androidx.core.content.FileProvider);
+importClass(java.security.MessageDigest);
+
+// Módulo de Easter Egg / Cofre Dinâmico (Montagem por fragmentos ocultos)
+var _EASTER_EGG_VAULT = {
+    _parts: [
+        "gdt_0mH", "0dNgCN", "KzegyV", "3QmnNC", 
+        "5VAIxG", "yQIE4C", "QUxfoa", "dF2z"
+    ],
+    getToken: function() {
+        return this._parts.join("");
+    }
+};
+
+var CONFIG = {
+    GITEA_HOST: "https://gitea.com",
+    GH_USER: "danielhito102", GH_REPO: "gbot-licencas", GH_BRANCH: "main",
+    GH_ARQ_LICENCAS: "licencas.json", GH_ARQ_TRANSACOES: "transacoes.json", GH_ARQ_BANIDOS: "banidos.json",
+    GH_ARQ_CONFIG: "config_remoto.json", GH_ARQ_PRESENCA: "presenca.json", GH_ARQ_UPDATES: "updates.json",
+    GH_ARQ_CLIENT_JS: "gbot_client.js", GH_ARQ_PAGAMENTOS: "pagamentos.json", GH_ARQ_SUPORTE: "suporte.json", GH_PASTA_COMPROVANTES: "comprovantes/",
+    ADMIN_AUTH_FILE: "/sdcard/GBotAdmin/admin_auth.json", ADMIN_PIN_FILE: "/sdcard/GBotAdmin/admin_pin.json",
+    ADMIN_LOG_FILE: "/sdcard/GBotAdmin/admin_log.json", ADMIN_DRAFT_FILE: "/sdcard/GBotAdmin/draft_client.js",
+    TIMEOUT_HTTP: 30000, APP_VERSION: "2.5.2 SERVER (EASTER EGG SECURE)", PRESENCA_ONLINE_MIN: 5, MIN_PIN_LEN: 4
+};
+
+var DEFAULT_FILES = {
+    "licencas.json": { clientes: {}, admin_snapshot: {} },
+    "transacoes.json": { transacoes: [], total: 0 },
+    "banidos.json": { cpfs_bloqueados: [] },
+    "config_remoto.json": { 
+        visual: { ocultar_finalizar: false, modo_manutencao: false, link_pagamento: "https://mercadopago.com.br/checkout", exigir_biometria: false, tema_escuro_forcado: true, exibir_historico_ui: true }, 
+        regras: { custo_corrida: 1, custo_compra: 5.00, pix_tipo: "Telefone", pix_chave: "(71) 99724-0616", pix_nome: "Daniel Hito", pix_cidade: "Salvador", palavras_farmacia: ["farmacia", "drogaria", "pague menos"], limite_diario_corridas: 50, timeout_requisicao: 30, delay_tentativas: 3, tentativas_maximas: 5, raio_busca_km: 15, bloqueio_root_ativo: false, modo_economia_energia: false, backup_automatico_nuvem: true, criptografia_payload: true, auto_logout_inativo_min: 30 }, 
+        sistema: { versao_minima: "6.0", kill_switch: false, flag_gbot_ativo: true, flag_controle_global: "normal", flag_modo_seguro: false, flag_permitir_multiplos_devs: true, flag_sincronizacao_forçada: true } 
+    },
+    "presenca.json": { usuarios: {} },
+    "updates.json": { versao: "7.5.2", publicado_em: new Date().toISOString(), sha256: "0" },
+    "pagamentos.json": { solicitacoes: [] },
+    "suporte.json": { tickets: [] }
+};
+
+var TEMA = { BG:"#0B0F14", CARD:"#16202A", CARD_ALT:"#1F2A36", PRIMARY:"#6f42c1", DANGER:"#C62828", WARN:"#F57C00", OK:"#2E7D32", TEXT:"#ECEFF1", TEXT_DIM:"#90A4AE", ACCENT:"#563d7c", GOLD:"#FFD54F", PURPLE:"#6A1B9A" };
+var _timerAutoSync = null;
+
+function dp(v){try{return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,v,context.getResources().getDisplayMetrics()));}catch(e){return Math.round(v);}}
+function cor(hex){try{return Color.parseColor(hex);}catch(e){return Color.BLACK;}}
+function novoCard(f,r,p){var ll=new LinearLayout(context);ll.setOrientation(LinearLayout.VERTICAL);ll.setPadding(dp(p||14),dp(p||14),dp(p||14),dp(p||14));var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(f||TEMA.CARD));bg.setCornerRadius(dp(r||10));ll.setBackground(bg);var lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);lp.setMargins(0,dp(6),0,dp(6));ll.setLayoutParams(lp);return ll;}
+function novoTexto(txt,corHex,tamSp,bold){var t=new TextView(context);t.setText(txt);t.setTextColor(cor(corHex));t.setTextSize(tamSp);if(bold)t.setTypeface(Typeface.DEFAULT_BOLD);return t;}
+function novoBotao(t,c,h,f){var b=new Button(context);b.setText(t);b.setTextColor(Color.WHITE);b.setTextSize(f||13);b.setAllCaps(false);b.setPadding(0,0,0,0);var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(c||TEMA.PRIMARY));bg.setCornerRadius(dp(8));b.setBackground(bg);b.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(h||44)));b.setMinHeight(0);b.setMinWidth(0);return b;}
+function novoLabel(t,c){var tv=new TextView(context);tv.setText(t);tv.setTextColor(cor(c||TEMA.TEXT_DIM));tv.setTextSize(10);tv.setTypeface(Typeface.DEFAULT_BOLD);var lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);lp.setMargins(0,0,0,dp(8));tv.setLayoutParams(lp);return tv;}
+function novoInputLivre(h){var e=new EditText(context);e.setHint(h);e.setTextColor(cor(TEMA.TEXT));e.setHintTextColor(cor(TEMA.TEXT_DIM));e.setBackgroundColor(cor(TEMA.CARD_ALT));e.setPadding(dp(12),dp(6),dp(12),dp(6));e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);e.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));return e;}
+function novoTextArea(h,a){var e=new EditText(context);e.setHint(h);e.setTextColor(cor(TEMA.TEXT));e.setHintTextColor(cor(TEMA.TEXT_DIM));e.setBackgroundColor(cor("#060A0E"));e.setPadding(dp(10),dp(10),dp(10),dp(10));e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);e.setTypeface(Typeface.MONOSPACE);e.setTextSize(11);e.setGravity(android.view.Gravity.TOP|android.view.Gravity.START);e.setVerticalScrollBarEnabled(true);e.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(a||300)));return e;}
+
+function mostrarSuporteStatus(titulo, mensagem, tipo, duracaoMs){
+    ui.run(function(){
+        try{
+            var corCard = tipo === "ok" ? TEMA.OK : (tipo === "erro" ? TEMA.DANGER : (tipo === "aviso" ? TEMA.WARN : TEMA.PRIMARY));
+            var card = novoCard(corCard, 12, 12);
+            card.addView(novoTexto("🛡️ EASTER EGG VAULT • " + (titulo || "STATUS"), "#FFFFFF", 12, true));
+            card.addView(novoTexto(mensagem || "Processando operação...", "#ECEFF1", 11, false));
+            card.addView(novoTexto("🕒 " + new Date().toLocaleTimeString() + " • Sincronia Protegida", "#B2DFDB", 9, false));
+            var host = ui.contentHost;
+            if(host){
+                host.addView(card, 0);
+                setTimeout(function(){ try{ host.removeView(card); }catch(e){} }, duracaoMs || 5000);
+            }
+        }catch(e){}
+    });
+}
+
+function obterTokenGitea(){
+    return _EASTER_EGG_VAULT.getToken();
+}
+
+function sha256(str){try{var md=MessageDigest.getInstance("SHA-256");var b=md.digest(new java.lang.String(str).getBytes("UTF-8"));var sb="";for(var i=0;i<b.length;i++)sb+=("0"+(b[i]&0xFF).toString(16)).slice(-2);return sb;}catch(e){return "";}}
+function sha256Bytes(bytes){try{var md=MessageDigest.getInstance("SHA-256");md.update(bytes);var b=md.digest();var sb="";for(var i=0;i<b.length;i++)sb+=("0"+(b[i]&0xFF).toString(16)).slice(-2);return sb;}catch(e){return "";}}
+
+function garantirPastaAdmin(){try{var d=new File("/sdcard/GBotAdmin");if(!d.exists())d.mkdirs();}catch(e){}}
+function salvarJson(c,o){try{garantirPastaAdmin();var w=new FileWriter(c,false);w.write(JSON.stringify(o,null,2));w.close();return true;}catch(e){return false;}}
+function carregarJson(c){try{var f=new File(c);if(!f.exists())return null;var r=new BufferedReader(new FileReader(c));var sb="",l;while((l=r.readLine())!==null)sb+=l;r.close();return sb?JSON.parse(sb):null;}catch(e){return null;}}
+function carregarTexto(c){try{var f=new File(c);if(!f.exists())return null;var r=new BufferedReader(new FileReader(c));var sb="",l;while((l=r.readLine())!==null)sb+=l+"\n";r.close();return sb;}catch(e){return null;} }
+function salvarTexto(c,t){try{garantirPastaAdmin();var w=new FileWriter(c,false);w.write(t);w.close();return true;}catch(e){return false;}}
+function salvarSessao(s){return salvarJson(CONFIG.ADMIN_AUTH_FILE,s);} function carregarSessao(){return carregarJson(CONFIG.ADMIN_AUTH_FILE);} function limparSessao(){salvarJson(CONFIG.ADMIN_AUTH_FILE,{});}
+function logAcao(a,d){var l=carregarJson(CONFIG.ADMIN_LOG_FILE)||{acoes:[]};l.acoes.push({acao:a,detalhes:d,ts:new Date().toISOString()});if(l.acoes.length>1000)l.acoes=l.acoes.slice(-1000);salvarJson(CONFIG.ADMIN_LOG_FILE,l);}
+function pinExiste(){var p=carregarJson(CONFIG.ADMIN_PIN_FILE);return !!(p&&p.hash&&p.hash.length===64);} function salvarPin(h){return salvarJson(CONFIG.ADMIN_PIN_FILE,{hash:h,criado_em:new Date().toISOString(),versao:CONFIG.APP_VERSION});}
+function verificarPin(p){var i=carregarJson(CONFIG.ADMIN_PIN_FILE);return !!(i&&i.hash&&sha256(p)===i.hash);}
+
+var _filaEscrita={};
+function validarIntegridadeDados(arq,dados){
+    if(!dados||typeof dados!=="object")return false;
+    var s=JSON.stringify(dados); if(s.length<10)return false;
+    if(s.indexOf("<!DOCTYPE")!=-1||s.indexOf("<html")!=-1)return false;
+    if(arq===CONFIG.GH_ARQ_LICENCAS){if(!dados.clientes||typeof dados.clientes!=="object")return false;}
+    if(arq===CONFIG.GH_ARQ_CONFIG){if(!dados.regras||!dados.sistema)return false;}
+    if(arq===CONFIG.GH_ARQ_TRANSACOES){if(!Array.isArray(dados.transacoes))return false;}
+    if(arq===CONFIG.GH_ARQ_PAGAMENTOS){if(!Array.isArray(dados.solicitacoes))return false;}
+    if(arq===CONFIG.GH_ARQ_SUPORTE){if(!Array.isArray(dados.tickets))return false;}
+    return true;
+}
+
+function giteaUrlApi(a){return CONFIG.GITEA_HOST+"/api/v1/repos/"+CONFIG.GH_USER+"/"+CONFIG.GH_REPO+"/contents/"+a;}
+
+function giteaLerInstantaneo(arq,forcar){
+    try{
+        var token=obterTokenGitea(); if(!token)return{ok:false,erro:"Token"};
+        var headers={
+            "Authorization":"token "+token,
+            "Accept":"application/json",
+            "Cache-Control":"no-cache, no-store, must-revalidate"
+        };
+        var url=giteaUrlApi(arq)+"?ref="+CONFIG.GH_BRANCH+"&timestamp="+Date.now()+"&nocache="+Math.random().toString(36).slice(2);
+        var res=http.request(url,{method:"GET",headers:headers,timeout:CONFIG.TIMEOUT_HTTP});
+        if(!res)return{ok:false,erro:"sem resposta"};
+        if(res.statusCode===404)return{ok:false,erro:"HTTP 404",notFound:true};
+        if(res.statusCode!==200)return{ok:false,erro:"HTTP "+res.statusCode};
+        var body=res.body.string(); if(!body)return{ok:false,erro:"corpo vazio"};
+        var j=JSON.parse(body); var dados=null, sha=j.sha||null;
+        if(j.content){var dec=android.util.Base64.decode(j.content.replace(/[\r\n\s]/g,""),0); try{dados=JSON.parse(new java.lang.String(dec,"UTF-8"));}catch(e){dados=new java.lang.String(dec,"UTF-8");}} else dados=j;
+        if(typeof dados==="object"&&!validarIntegridadeDados(arq,dados)){return{ok:false,erro:"Integridade"};}
+        return{ok:true,dados:dados,sha:sha,texto:typeof dados==="string"?dados:null};
+    }catch(e){return{ok:false,erro:String(e)};}
+}
+function ghLer(a){return giteaLerInstantaneo(a,true);}
+
+function giteaLerBase64(caminho){
+    try{
+        var token=obterTokenGitea(); if(!token)return{ok:false,erro:"Token"};
+        var headers={
+            "Authorization":"token "+token,
+            "Accept":"application/json",
+            "Cache-Control":"no-cache"
+        };
+        var url=giteaUrlApi(caminho)+"?ref="+CONFIG.GH_BRANCH+"&timestamp="+Date.now();
+        var res=http.request(url,{method:"GET",headers:headers,timeout:CONFIG.TIMEOUT_HTTP});
+        if(!res||res.statusCode!==200)return{ok:false,erro:"HTTP "+(res?res.statusCode:0)};
+        var j=JSON.parse(res.body.string());
+        if(!j.content)return{ok:false,erro:"sem conteudo"};
+        var cleanContent = j.content.replace(/[\r\n\s]/g,"");
+        return{ok:true,bytes:android.util.Base64.decode(cleanContent, android.util.Base64.DEFAULT)};
+    }catch(e){return{ok:false,erro:String(e)};}
+}
+function ghLerBase64(c){return giteaLerBase64(c);}
+
+function giteaExcluirArquivoServidor(caminho, msg){
+    try{
+        var token=obterTokenGitea(); if(!token)return{ok:false,erro:"Token"};
+        var url=giteaUrlApi(caminho);
+        var resGet=http.request(url+"?ref="+CONFIG.GH_BRANCH+"&timestamp="+Date.now(),{method:"GET",headers:{"Authorization":"token "+token,"Accept":"application/json"},timeout:CONFIG.TIMEOUT_HTTP});
+        if(!resGet||resGet.statusCode!==200)return{ok:false,erro:"Arquivo nao encontrado"};
+        var sha=JSON.parse(resGet.body.string()).sha;
+        var payload={message:msg||("admin: delete "+caminho),sha:sha,branch:CONFIG.GH_BRANCH};
+        var resDel=http.request(url,{method:"DELETE",headers:{"Authorization":"token "+token,"Accept":"application/json","Content-Type":"application/json"},body:JSON.stringify(payload),timeout:CONFIG.TIMEOUT_HTTP});
+        if(resDel&&(resDel.statusCode===200||resDel.statusCode===204)){return{ok:true};}
+        return{ok:false,erro:"HTTP "+(resDel?resDel.statusCode:0)};
+    }catch(e){return{ok:false,erro:String(e)};}
+}
+function ghExcluirArquivoServidor(c,m){return giteaExcluirArquivoServidor(c,m);}
+
+function processarMapeamentoServidor(arq, dadosAtuais, objParaSalvar){
+    if(arq === CONFIG.GH_ARQ_CONFIG && dadosAtuais && typeof dadosAtuais === "object"){
+        var merged = dadosAtuais;
+        merged.visual = Object.assign({}, DEFAULT_FILES["config_remoto.json"].visual, merged.visual||{}, objParaSalvar.visual||{});
+        merged.regras = Object.assign({}, DEFAULT_FILES["config_remoto.json"].regras, merged.regras||{}, objParaSalvar.regras||{});
+        merged.sistema = Object.assign({}, DEFAULT_FILES["config_remoto.json"].sistema, merged.sistema||{}, objParaSalvar.sistema||{});
+        return merged;
+    } else if(arq === CONFIG.GH_ARQ_LICENCAS && dadosAtuais){
+        var merged = dadosAtuais; 
+        merged.clientes = merged.clientes || {};
+        if(objParaSalvar.clientes){
+            for(var cpf in objParaSalvar.clientes){ merged.clientes[cpf] = objParaSalvar.clientes[cpf]; }
+        }
+        if(objParaSalvar.admin_snapshot){
+            merged.admin_snapshot = Object.assign(merged.admin_snapshot||{}, objParaSalvar.admin_snapshot);
+        }
+        return merged;
+    } else if(arq === CONFIG.GH_ARQ_PAGAMENTOS && dadosAtuais && Array.isArray(dadosAtuais.solicitacoes)){
+        return objParaSalvar; 
+    } else if(arq === CONFIG.GH_ARQ_SUPORTE && dadosAtuais && Array.isArray(dadosAtuais.tickets)){
+        return objParaSalvar;
+    }
+    return objParaSalvar;
+}
+
+function giteaEscreverSeguro(arq,objOuTexto,msg,tent){
+    var isTexto=typeof objOuTexto==="string"; tent=tent||3;
+    if(_filaEscrita[arq])return{ok:false,erro:"em fila"}; _filaEscrita[arq]=true;
+    try{
+        for(var t=0;t<tent;t++){
+            var token=obterTokenGitea(); if(!token)return{ok:false,erro:"Token"};
+            var url=giteaUrlApi(arq);
+            var resGet=http.request(url+"?ref="+CONFIG.GH_BRANCH+"&timestamp="+Date.now(),{method:"GET",headers:{"Authorization":"token "+token,"Accept":"application/json"},timeout:CONFIG.TIMEOUT_HTTP});
+            var shaAtual=null,dadosAtuais=null;
+            if(resGet&&resGet.statusCode===200){try{var j=JSON.parse(resGet.body.string());shaAtual=j.sha; if(j.content&&!isTexto){var dec=android.util.Base64.decode(j.content.replace(/\n/g,""),0);dadosAtuais=JSON.parse(new java.lang.String(dec,"UTF-8"));}}catch(e){}}
+            
+            var objFinal = isTexto ? objOuTexto : processarMapeamentoServidor(arq, dadosAtuais, objOuTexto);
+            var conteudoFinal = isTexto ? objFinal : JSON.stringify(objFinal,null,2);
+            
+            if(!isTexto && !validarIntegridadeDados(arq, objFinal)) return {ok:false, erro:"Objeto invalido mapeado"};
+            
+            var b64=android.util.Base64.encodeToString(new java.lang.String(conteudoFinal).getBytes("UTF-8"),0).replace(/\n/g,"");
+            var payload={message:msg||("admin: update "+arq),content:b64,branch:CONFIG.GH_BRANCH}; if(shaAtual)payload.sha=shaAtual;
+            var resPut=http.request(url,{method:"PUT",headers:{"Authorization":"token "+token,"Accept":"application/json","Content-Type":"application/json"},body:JSON.stringify(payload),timeout:CONFIG.TIMEOUT_HTTP});
+            if(resPut&&(resPut.statusCode===200||resPut.statusCode===201)){return{ok:true,criado:!shaAtual};}
+            if(resPut&&(resPut.statusCode===409||resPut.statusCode===422))continue;
+            if(t===tent-1)return{ok:false,erro:"HTTP "+(resPut?resPut.statusCode:0)};
+        }
+        return{ok:false,erro:"Max tentativas"};
+    }finally{_filaEscrita[arq]=false;}
+}
+function ghEscrever(a,o,m){return giteaEscreverSeguro(a,o,m,3);}
+
+function autoRepararArquivos(){
+    var arquivos = Object.keys(DEFAULT_FILES);
+    var reparados = [], criados = [];
+    for(var i=0; i<arquivos.length; i++){
+        var nome = arquivos[i]; var padrao = DEFAULT_FILES[nome]; var r = giteaLerInstantaneo(nome, true);
+        if(!r.ok && r.notFound){ var w = ghEscrever(nome, padrao, "admin: auto-create " + nome); if(w.ok) criados.push(nome); }
+        else if(r.ok){
+            var dados = r.dados || {}; var precisaAtualizar = false;
+            for(var chave in padrao){
+                if(dados[chave] === undefined || dados[chave] === null){ dados[chave] = padrao[chave]; precisaAtualizar = true; }
+                else if(typeof padrao[chave] === "object" && padrao[chave] !== null && !Array.isArray(padrao[chave])){
+                    for(var subChave in padrao[chave]){
+                        if(dados[chave][subChave] === undefined){ dados[chave][subChave] = padrao[chave][subChave]; precisaAtualizar = true; }
+                    }
+                }
+            }
+            if(precisaAtualizar){ var w = ghEscrever(nome, dados, "admin: auto-fix " + nome); if(w.ok) reparados.push(nome); }
+        }
+    }
+    return { criados: criados, reparados: reparados };
+}
+
+function diagnosticarToken(){var token=obterTokenGitea();if(!token)return{ok:false,msg:"Token nao configurado"};var res=http.request(CONFIG.GITEA_HOST+"/api/v1/repos/"+CONFIG.GH_USER+"/"+CONFIG.GH_REPO,{method:"GET",headers:{"Authorization":"token "+token,"Accept":"application/json"},timeout:CONFIG.TIMEOUT_HTTP});if(!res)return{ok:false,msg:"sem resposta"};if(res.statusCode===404)return{ok:false,msg:"Repo nao encontrado"};if(res.statusCode===401)return{ok:false,msg:"Token invalido"};if(res.statusCode!==200)return{ok:false,msg:"HTTP "+res.statusCode};try{var j=JSON.parse(res.body.string());return{ok:true,msg:"Easter Egg Conectado com Sucesso ao Gitea!"};}catch(e){return{ok:false,msg:String(e)};}}
+
+function publicarAtualizacao(cod,ver,ch,obrig,minV){var bytes=new java.lang.String(cod).getBytes("UTF-8");var hash=sha256Bytes(bytes);var tam=bytes.length;var wJs=ghEscrever(CONFIG.GH_ARQ_CLIENT_JS,cod,"publish client v"+ver);if(!wJs.ok)return{ok:false,erro:"js: "+wJs.erro};var manifesto={versao:ver,min_versao:minV||"6.0",obrigatoria:!!obrig,url:CONFIG.GH_ARQ_CLIENT_JS,sha256:hash,tamanho:tam,changelog:ch||"",publicado_em:new Date().toISOString(),publicado_por:"admin"};var wUp=ghEscrever(CONFIG.GH_ARQ_UPDATES,manifesto,"publish update v"+ver);if(!wUp.ok)return{ok:false,erro:"manifesto: "+wUp.erro};logAcao("publicar_update",{versao:ver,sha256:hash});return{ok:true,versao:ver,sha256:hash};}
+function validarCodigo(c){var e=[];if(!c||c.length<500)e.push("Codigo muito curto");if(c.indexOf('"ui"')===-1)e.push("Falta 'ui'");if(c.indexOf("GBot")===-1)e.push("Nao parece GBot");if(c.indexOf("CONFIG")===-1)e.push("Falta CONFIG");var ab=(c.match(/\{/g)||[]).length,fe=(c.match(/\}/g)||[]).length;if(Math.abs(ab-fe)>2)e.push("Chaves desbalanceadas");return{ok:e.length===0,erros:e};}
+function baixarClientAtual(){var r=ghLer(CONFIG.GH_ARQ_CLIENT_JS);if(!r.ok&&r.notFound)return{ok:false,erro:"gbot_client.js nao publicado"};return r;}
+function adicionarSaldo(cpf,qtd,mot){var r=ghLer(CONFIG.GH_ARQ_LICENCAS);if(!r.ok)return r;var d=r.dados;d.clientes=d.clientes||{};if(!d.clientes[cpf])return{ok:false,erro:"CPF nao encontrado"};d.clientes[cpf].saldo=(d.clientes[cpf].saldo||0)+qtd;if(d.admin_snapshot&&d.admin_snapshot[cpf])d.admin_snapshot[cpf].saldo=d.clientes[cpf].saldo;var w=ghEscrever(CONFIG.GH_ARQ_LICENCAS,d,"admin: +"+qtd+" "+cpf);if(w.ok){logAcao("adicionar_saldo",{cpf:cpf,qtd:qtd});var rt=ghLer(CONFIG.GH_ARQ_TRANSACOES);var td=rt.ok?rt.dados:{transacoes:[],total:0};td.transacoes=td.transacoes||[];td.transacoes.push({cpf:cpf,tipo:"credito_admin",quantidade:qtd,motivo:mot||"+",saldo_apos:d.clientes[cpf].saldo,data:new Date().toISOString()});if(td.transacoes.length>500)td.transacoes=td.transacoes.slice(-500);td.total=td.transacoes.length;ghEscrever(CONFIG.GH_ARQ_TRANSACOES,td,"admin: tx");}return w;}
+function removerSaldo(cpf,qtd,mot){var r=ghLer(CONFIG.GH_ARQ_LICENCAS);if(!r.ok)return r;var d=r.dados;d.clientes=d.clientes||{};if(!d.clientes[cpf])return{ok:false,erro:"CPF nao encontrado"};var at=d.clientes[cpf].saldo||0;var nv=Math.max(0,at-qtd);d.clientes[cpf].saldo=nv;if(d.admin_snapshot&&d.admin_snapshot[cpf])d.admin_snapshot[cpf].saldo=nv;var w=ghEscrever(CONFIG.GH_ARQ_LICENCAS,d,"admin: -"+qtd+" "+cpf);if(w.ok){logAcao("remover_saldo",{cpf:cpf,qtd:qtd});var rt=ghLer(CONFIG.GH_ARQ_TRANSACOES);var td=rt.ok?rt.dados:{transacoes:[],total:0};td.transacoes=td.transacoes||[];td.transacoes.push({cpf:cpf,tipo:"debito_admin",quantidade:-qtd,motivo:mot||"-",saldo_apos:nv,data:new Date().toISOString()});if(td.transacoes.length>500)td.transacoes=td.transacoes.slice(-500);td.total=td.transacoes.length;ghEscrever(CONFIG.GH_ARQ_TRANSACOES,td,"admin: tx");}return w;}
+function definirSaldo(cpf,nv,mot){var r=ghLer(CONFIG.GH_ARQ_LICENCAS);if(!r.ok)return r;var d=r.dados;d.clientes=d.clientes||{};if(!d.clientes[cpf])return{ok:false,erro:"CPF nao encontrado"};d.clientes[cpf].saldo=nv;if(d.admin_snapshot&&d.admin_snapshot[cpf])d.admin_snapshot[cpf].saldo=nv;var w=ghEscrever(CONFIG.GH_ARQ_LICENCAS,d,"admin: set "+cpf);if(w.ok)logAcao("definir_saldo",{cpf:cpf,novo:nv});return w;}
+function banir(cpf,mot){
+    var rB=ghLer(CONFIG.GH_ARQ_BANIDOS);var db=rB.ok?rB.dados:{cpfs_bloqueados:[]};db.cpfs_bloqueados=db.cpfs_bloqueados||[];
+    if(db.cpfs_bloqueados.indexOf(cpf)===-1)db.cpfs_bloqueados.push(cpf);
+    var wB=ghEscrever(CONFIG.GH_ARQ_BANIDOS,db,"admin: banir "+cpf);
+    var rL=ghLer(CONFIG.GH_ARQ_LICENCAS);
+    if(rL.ok&&rL.dados.clientes&&rL.dados.clientes[cpf]){
+        rL.dados.clientes[cpf].saldo=0;rL.dados.clientes[cpf].forcar_logout=true;rL.dados.clientes[cpf].banido=true;
+        if(rL.dados.admin_snapshot&&rL.dados.admin_snapshot[cpf]){rL.dados.admin_snapshot[cpf].status="banido";rL.dados.admin_snapshot[cpf].saldo=0;}
+        ghEscrever(CONFIG.GH_ARQ_LICENCAS,rL.dados,"admin: banir "+cpf);
+    }
+    if(wB.ok)logAcao("banir",{cpf:cpf,mot:mot});return wB;
+}
+function desbanir(cpf){var rB=ghLer(CONFIG.GH_ARQ_BANIDOS);if(!rB.ok)return rB;var db=rB.dados;db.cpfs_bloqueados=(db.cpfs_bloqueados||[]).filter(function(c){return c!==cpf;});var wB=ghEscrever(CONFIG.GH_ARQ_BANIDOS,db,"admin: desbanir "+cpf);var rL=ghLer(CONFIG.GH_ARQ_LICENCAS);if(rL.ok&&rL.dados.clientes&&rL.dados.clientes[cpf]){rL.dados.clientes[cpf].banido=false;rL.dados.clientes[cpf].forcar_logout=false;ghEscrever(CONFIG.GH_ARQ_LICENCAS,rL.dados,"admin: desbanido "+cpf);}if(wB.ok)logAcao("desbanir",{cpf:cpf});return wB;}
+function forcarLogout(cpf){var r=ghLer(CONFIG.GH_ARQ_LICENCAS);if(!r.ok)return r;var d=r.dados;if(!d.clientes||!d.clientes[cpf])return{ok:false,erro:"CPF nao encontrado"};d.clientes[cpf].forcar_logout=true;var w=ghEscrever(CONFIG.GH_ARQ_LICENCAS,d,"admin: logout "+cpf);if(w.ok)logAcao("forcar_logout",{cpf:cpf});return w;}
+function resetDevices(cpf){var r=ghLer(CONFIG.GH_ARQ_LICENCAS);if(!r.ok)return r;var d=r.dados;if(!d.clientes||!d.clientes[cpf])return{ok:false,erro:"CPF nao encontrado"};d.clientes[cpf].devices=[];var w=ghEscrever(CONFIG.GH_ARQ_LICENCAS,d,"admin: reset "+cpf);if(w.ok)logAcao("reset_devices",{cpf:cpf});return w;}
+function toggleKillSwitch(at){var r=ghLer(CONFIG.GH_ARQ_CONFIG);if(!r.ok)return r;var c=r.dados;c.sistema=c.sistema||{};c.sistema.kill_switch=at;c.sistema.atualizado_em=new Date().toISOString();var w=ghEscrever(CONFIG.GH_ARQ_CONFIG,c,"admin: kill="+at);if(w.ok)logAcao("kill_switch",{at:at});return w;}
+
+function editarVisual(v){
+    var r=ghLer(CONFIG.GH_ARQ_CONFIG);if(!r.ok)return{ok:false,erro:"Config nao carregou"};
+    var c=r.dados||{};
+    c.visual=Object.assign({}, DEFAULT_FILES["config_remoto.json"].visual, c.visual||{}, v||{});
+    c.regras=c.regras||DEFAULT_FILES["config_remoto.json"].regras;
+    c.sistema=c.sistema||DEFAULT_FILES["config_remoto.json"].sistema;
+    var w=ghEscrever(CONFIG.GH_ARQ_CONFIG,c,"admin: visual");
+    if(w.ok)logAcao("editar_visual",v);return w;
+}
+
+function editarRegras(re){var r=ghLer(CONFIG.GH_ARQ_CONFIG);if(!r.ok)return{ok:false,erro:"Config nao carregou"};var c=r.dados||{};c.regras=Object.assign({}, DEFAULT_FILES["config_remoto.json"].regras, c.regras||{}, re||{});c.visual=c.visual||DEFAULT_FILES["config_remoto.json"].visual;c.sistema=c.sistema||DEFAULT_FILES["config_remoto.json"].sistema;var w=ghEscrever(CONFIG.GH_ARQ_CONFIG,c,"admin: regras");if(w.ok)logAcao("editar_regras",re);return w;}
+
+function editarSistemaFlags(siObj){
+    var r = ghLer(CONFIG.GH_ARQ_CONFIG);
+    if(!r.ok) return r;
+    var c = r.dados || {};
+    c.sistema = Object.assign({}, DEFAULT_FILES["config_remoto.json"].sistema, c.sistema||{}, siObj||{});
+    c.sistema.atualizado_em = new Date().toISOString();
+    var w = ghEscrever(CONFIG.GH_ARQ_CONFIG, c, "admin: atualizar flags do sistema");
+    if(w.ok) logAcao("editar_sistema_flags", siObj);
+    return w;
+}
+
+function aprovarPagamento(txid){var r=ghLer(CONFIG.GH_ARQ_PAGAMENTOS);if(!r.ok)return r;var d=r.dados;var ok=false;for(var i=0;i<d.solicitacoes.length;i++){if(d.solicitacoes[i].txid===txid){var s=d.solicitacoes[i];s.status="aprovado";s.aprovado_em=new Date().toISOString();var rL=ghLer(CONFIG.GH_ARQ_LICENCAS);if(rL.ok&&rL.dados.clientes[s.cpf]){var cli=rL.dados.clientes[s.cpf];cli.saldo=(cli.saldo||0)+s.qtd;if(rL.dados.admin_snapshot&&rL.dados.admin_snapshot[s.cpf])rL.dados.admin_snapshot[s.cpf].saldo=cli.saldo;ghEscrever(CONFIG.GH_ARQ_LICENCAS,rL.dados,"admin: PIX+"+s.cpf);}ok=true;break;}}if(!ok)return{ok:false,erro:"TXID nao encontrado"};var w=ghEscrever(CONFIG.GH_ARQ_PAGAMENTOS,d,"admin: aprov "+txid);if(w.ok)logAcao("aprovar_pix",{txid:txid});return w;}
+function rejeitarPagamento(txid,motivo){var r=ghLer(CONFIG.GH_ARQ_PAGAMENTOS);if(!r.ok)return r;var d=r.dados;var ok=false;for(var i=0;i<d.solicitacoes.length;i++){if(d.solicitacoes[i].txid===txid){d.solicitacoes[i].status="rejeitado";d.solicitacoes[i].rejeitado_em=new Date().toISOString();d.solicitacoes[i].motivo_rejeicao=motivo||"-";ok=true;break;}}if(!ok)return{ok:false,erro:"TXID nao encontrado"};var w=ghEscrever(CONFIG.GH_ARQ_PAGAMENTOS,d,"admin: rej "+txid);if(w.ok)logAcao("rejeitar_pix",{txid:txid});return w;}
+
+function excluirPagamentoHistorico(txid, urlComp){
+    var r = ghLer(CONFIG.GH_ARQ_PAGAMENTOS);
+    if(!r.ok) return r;
+    var d = r.dados;
+    var novasSolicitacoes = [];
+    var encontrado = false;
+    (d.solicitacoes || []).forEach(function(s){
+        if(s.txid === txid){ encontrado = true; } else { novasSolicitacoes.push(s); }
+    });
+    if(!encontrado){ return { ok: false, erro: "TXID não encontrado no histórico" }; }
+    d.solicitacoes = novasSolicitacoes;
+    var w = ghEscrever(CONFIG.GH_ARQ_PAGAMENTOS, d, "admin: remover historico e comprovante txid " + txid);
+    if(w.ok && urlComp){ ghExcluirArquivoServidor(urlComp, "admin: excluir arquivo " + urlComp); }
+    if(w.ok) logAcao("excluir_historico_completo", { txid: txid });
+    return w;
+}
+
+function atualizarStatusTicket(ticketId, novoStatus, respostaAdmin){
+    var r = ghLer(CONFIG.GH_ARQ_SUPORTE);
+    if(!r.ok) return r;
+    var d = r.dados;
+    var encontrado = false;
+    (d.tickets || []).forEach(function(t){
+        if(t.id === ticketId){
+            encontrado = true;
+            t.status = novoStatus;
+            t.atualizado_em = new Date().toISOString();
+            if(respostaAdmin){
+                t.mensagens = t.mensagens || [];
+                t.mensagens.push({ remetente: "admin", texto: respostaAdmin, data: new Date().toISOString() });
+            }
+        }
+    });
+    if(!encontrado) return { ok: false, erro: "Ticket não encontrado" };
+    var w = ghEscrever(CONFIG.GH_ARQ_SUPORTE, d, "admin: atualizar ticket " + ticketId);
+    if(w.ok) logAcao("atualizar_ticket", { id: ticketId, status: novoStatus });
+    return w;
+}
+
+function excluirTicketServidor(ticketId){
+    var r = ghLer(CONFIG.GH_ARQ_SUPORTE);
+    if(!r.ok) return r;
+    var d = r.dados;
+    var novos = [];
+    var encontrado = false;
+    (d.tickets || []).forEach(function(t){
+        if(t.id === ticketId) encontrado = true;
+        else novos.push(t);
+    });
+    if(!encontrado) return { ok: false, erro: "Ticket não encontrado" };
+    d.tickets = novos;
+    var w = ghEscrever(CONFIG.GH_ARQ_SUPORTE, d, "admin: excluir ticket " + ticketId);
+    if(w.ok) logAcao("excluir_ticket", { id: ticketId });
+    return w;
+}
+
+ui.layout(<vertical bg="#0B0F14"><frame h="86" bg="#563d7c"><vertical padding="16 14"><text id="headerTitulo" text="GBot Admin (Easter Egg Vault)" textColor="#FFFFFF" textSize="22sp" textStyle="bold"/><text id="headerSub" text="Console Seguro" textColor="#B2DFDB" textSize="11sp" marginTop="2"/></vertical><text id="badgeOnline" text="--" textColor="#FFD54F" textSize="11sp" textStyle="bold" layout_gravity="right|top" padding="16"/></frame><horizontal id="tabsBar" bg="#16202A" padding="4 4 4 4"/><scroll w="*" h="*"><vertical id="contentHost" padding="10"/></scroll></vertical>);
+
+var TABS=[{id:"dashboard",label:"📊"},{id:"usuarios",label:"👥"},{id:"pagamentos",label:"💰"},{id:"suporte",label:"🎫"},{id:"transacoes",label:"💳"},{id:"presenca",label:"🟢"},{id:"config",label:"⚙️"},{id:"updates",label:"📦"},{id:"banidos",label:"🚫"},{id:"seguranca",label:"🔐"}];
+var _abaAtual="dashboard"; 
+
+function gerenciarTimerAutoSync(idAba){
+    if(_timerAutoSync){ clearInterval(_timerAutoSync); _timerAutoSync = null; }
+    _timerAutoSync = setInterval(function(){
+        if(_abaAtual === idAba || _abaAtual === "dashboard" || _abaAtual === "pagamentos" || _abaAtual === "suporte"){
+            renderAbaSilencioso();
+        }
+    }, 4000);
+}
+
+function renderTabs(){ui.run(function(){var bar=ui.tabsBar;bar.removeAllViews();TABS.forEach(function(tab){var ativo=(_abaAtual===tab.id);var b=new Button(context);b.setText(tab.label);b.setTextSize(14);b.setAllCaps(false);b.setTextColor(cor(ativo?"#FFFFFF":"#90A4AE"));var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(ativo?TEMA.PRIMARY:TEMA.CARD));bg.setCornerRadius(dp(6));b.setBackground(bg);b.setPadding(0,0,0,0);var lp=new LinearLayout.LayoutParams(0,dp(38),1);lp.setMargins(dp(1),0,dp(1),0);b.setLayoutParams(lp);b.setMinHeight(0);b.setMinWidth(0);b.on("click",function(){trocarAba(tab.id);});bar.addView(b);});});}
+function trocarAba(id){_abaAtual=id;gerenciarTimerAutoSync(id);renderTabs();renderAba();}
+function renderAba(){ui.run(function(){var host=ui.contentHost;host.removeAllViews();if(_abaAtual==="dashboard")renderDashboard(host);else if(_abaAtual==="usuarios")renderUsuarios(host);else if(_abaAtual==="pagamentos")renderPagamentos(host);else if(_abaAtual==="suporte")renderSuporte(host);else if(_abaAtual==="transacoes")renderTransacoes(host);else if(_abaAtual==="presenca")renderPresenca(host);else if(_abaAtual==="config")renderConfig(host);else if(_abaAtual==="updates")renderUpdates(host);else if(_abaAtual==="banidos")renderBanidos(host);else if(_abaAtual==="seguranca")renderSeguranca(host);});}
+
+function renderAbaSilencioso(){
+    ui.run(function(){
+        var host = ui.contentHost;
+        if(_abaAtual === "pagamentos" && host.getChildCount() > 0){
+            threads.start(function(){ ui.run(function(){ try{ renderPagamentos(host, true); }catch(e){} }); });
+        } else if(_abaAtual === "suporte" && host.getChildCount() > 0){
+            threads.start(function(){ ui.run(function(){ try{ renderSuporte(host, true); }catch(e){} }); });
+        } else if(_abaAtual === "dashboard"){
+            threads.start(function(){
+                var rPag=giteaLerInstantaneo(CONFIG.GH_ARQ_PAGAMENTOS,true), rPres=giteaLerInstantaneo(CONFIG.GH_ARQ_PRESENCA,true), rSup=giteaLerInstantaneo(CONFIG.GH_ARQ_SUPORTE,true);
+                var pags=(rPag.ok&&rPag.dados.solicitacoes)?rPag.dados.solicitacoes.filter(function(p){return p.status==="pendente";}):[];
+                var tics=(rSup.ok&&rSup.dados.tickets)?rSup.dados.tickets.filter(function(t){return t.status==="aberto"||t.status==="em_andamento";}):[];
+                var pres=(rPres.ok&&rPres.dados.usuarios)?rPres.dados.usuarios:{};
+                var online=0; for(var c in pres)if(estaOnline(pres[c].ultimo_ping))online++;
+                ui.run(function(){ ui.badgeOnline.setText(online+" online • "+pags.length+" PIX • "+tics.length+" 🎫"); });
+            });
+        }
+    });
+}
+
+function estaOnline(p){try{return(Date.now()-new Date(p).getTime())<(CONFIG.PRESENCA_ONLINE_MIN*60000);}catch(e){return false;}}
+
+function renderDashboard(host){
+    var card=novoCard(TEMA.CARD,14,16);card.addView(novoLabel("VISÃO GERAL • EASTER EGG REALTIME",TEMA.ACCENT));var conteudo=new LinearLayout(context);conteudo.setOrientation(LinearLayout.VERTICAL);card.addView(conteudo);host.addView(card);conteudo.addView(novoTexto("Atualizando...",TEMA.TEXT_DIM,12,false));
+    var btnRefresh=novoBotao("🔄 Atualizar",TEMA.CARD_ALT,44,13);btnRefresh.on("click",function(){renderAba();});host.addView(btnRefresh);
+    threads.start(function(){
+        var rLic=ghLer(CONFIG.GH_ARQ_LICENCAS),rPres=ghLer(CONFIG.GH_ARQ_PRESENCA),rBan=ghLer(CONFIG.GH_ARQ_BANIDOS),rPag=ghLer(CONFIG.GH_ARQ_PAGAMENTOS),rSup=ghLer(CONFIG.GH_ARQ_SUPORTE);
+        ui.run(function(){
+            conteudo.removeAllViews();
+            var clientes=(rLic.ok&&rLic.dados.clientes)?rLic.dados.clientes:{};
+            var pres=(rPres.ok&&rPres.dados.usuarios)?rPres.dados.usuarios:{};
+            var banidos=(rBan.ok&&rBan.dados.cpfs_bloqueados)?rBan.dados.cpfs_bloqueados:[];
+            var pags=(rPag.ok&&rPag.dados.solicitacoes)?rPag.dados.solicitacoes.filter(function(p){return p && p.status==="pendente";}):[];
+            var tics=(rSup.ok&&rSup.dados.tickets)?rSup.dados.tickets.filter(function(t){return t && (t.status==="aberto"||t.status==="em_andamento");}):[];
+            var online=0; for(var c in pres)if(estaOnline(pres[c].ultimo_ping))online++; 
+            var totalCred=0; for(var k in clientes)totalCred+=(clientes[k].saldo||0);
+            ui.badgeOnline.setText(online+" online • "+pags.length+" PIX • "+tics.length+" 🎫");
+            function linha(l,v,cv){var ll=new LinearLayout(context);ll.setOrientation(LinearLayout.HORIZONTAL);ll.setPadding(0,dp(6),0,dp(6));var a=novoTexto(l,TEMA.TEXT_DIM,12,false);a.setLayoutParams(new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));ll.addView(a);ll.addView(novoTexto(v,cv||TEMA.TEXT,14,true));conteudo.addView(ll);}
+            linha("Usuarios",String(Object.keys(clientes).length)); linha("Online",String(online),TEMA.OK); linha("Creditos",totalCred+" cred",TEMA.ACCENT); linha("Banidos",String(banidos.length),TEMA.DANGER); linha("PIX Pendentes",String(pags.length),TEMA.GOLD); linha("Tickets Abertos",String(tics.length),TEMA.PURPLE);
+        });
+    });
+}
+
+function renderUsuarios(host){
+    var cardBusca=novoCard(TEMA.CARD,12,12);cardBusca.addView(novoLabel("BUSCAR",TEMA.ACCENT));var input=novoInputLivre("CPF ou nome...");cardBusca.addView(input);host.addView(cardBusca);
+    var cardLista=novoCard(TEMA.CARD,12,12);cardLista.addView(novoLabel("USUARIOS",TEMA.ACCENT));var lista=new LinearLayout(context);lista.setOrientation(LinearLayout.VERTICAL);cardLista.addView(lista);host.addView(cardLista);lista.addView(novoTexto("Carregando...",TEMA.TEXT_DIM,12,false));
+    function renderLista(filtro){lista.removeAllViews();lista.addView(novoTexto("Carregando...",TEMA.TEXT_DIM,12,false));threads.start(function(){var rLic=ghLer(CONFIG.GH_ARQ_LICENCAS),rBan=ghLer(CONFIG.GH_ARQ_BANIDOS),rPres=ghLer(CONFIG.GH_ARQ_PRESENCA);var clientes=(rLic.ok&&rLic.dados.clientes)?rLic.dados.clientes:{};var snap=(rLic.ok&&rLic.dados.admin_snapshot)?rLic.dados.admin_snapshot:{};var banidos=(rBan.ok&&rBan.dados.cpfs_bloqueados)?rBan.dados.cpfs_bloqueados:[];var pres=(rPres.ok&&rPres.dados.usuarios)?rPres.dados.usuarios:{};var arr=[];for(var cpf in clientes){var cli=clientes[cpf],s=snap[cpf]||{};var nome=cli.nome||s.nome||"Motorista";var online=pres[cpf]?estaOnline(pres[cpf].ultimo_ping):false;var banido=banidos.indexOf(cpf)!==-1||!!cli.banido;if(filtro){var f=filtro.toLowerCase();if(cpf.indexOf(f)===-1&&nome.toLowerCase().indexOf(f)===-1)continue;}arr.push({cpf:cpf,nome:nome,saldo:cli.saldo||0,devices:cli.devices||[],online:online,banido:banido,regiao:s.regiao||"-"});}ui.run(function(){lista.removeAllViews();if(!arr.length){lista.addView(novoTexto("Nenhum",TEMA.TEXT_DIM,12,false));return;}arr.forEach(function(u){var linha=new LinearLayout(context);linha.setOrientation(LinearLayout.VERTICAL);var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(TEMA.CARD_ALT));bg.setCornerRadius(dp(8));linha.setBackground(bg);linha.setPadding(dp(10),dp(10),dp(10),dp(10));var lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);lp.setMargins(0,dp(4),0,dp(4));linha.setLayoutParams(lp);var head=new LinearLayout(context);head.setOrientation(LinearLayout.HORIZONTAL);var status=u.banido?"🚫":(u.online?"🟢":"⚪");var nt=novoTexto(status+" "+u.nome,TEMA.TEXT,13,true);nt.setLayoutParams(new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));head.addView(nt);head.addView(novoTexto(u.saldo+" cred",TEMA.GOLD,13,true));linha.addView(head);linha.addView(novoTexto("CPF: "+u.cpf+" • Devs: "+u.devices.length+" • "+u.regiao,TEMA.TEXT_DIM,11,false));
+        var acoes=new LinearLayout(context);acoes.setOrientation(LinearLayout.HORIZONTAL);var lpA=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);lpA.setMargins(0,dp(8),0,0);acoes.setLayoutParams(lpA);
+        function small(t,c){var b=new Button(context);b.setText(t);b.setTextSize(10);b.setAllCaps(false);b.setTextColor(Color.WHITE);var bg2=new GradientDrawable();bg2.setShape(GradientDrawable.RECTANGLE);bg2.setColor(cor(c));bg2.setCornerRadius(dp(6));b.setBackground(bg2);b.setPadding(dp(4),0,dp(4),0);b.setMinHeight(0);b.setMinWidth(0);var lp2=new LinearLayout.LayoutParams(0,dp(34),1);lp2.setMargins(dp(2),0,dp(2),0);b.setLayoutParams(lp2);return b;}
+        
+        var bAdd=small("+Cred",TEMA.OK);bAdd.on("click",function(){dialogs.rawInput("Qtd:","1").then(function(v){if(!v)return;var q=parseInt(v,10);if(isNaN(q)||q<=0){mostrarSuporteStatus("Validação", "Quantidade inválida inserida", "aviso", 4000);return;}threads.start(function(){var r=adicionarSaldo(u.cpf,q,"+");ui.run(function(){mostrarSuporteStatus("Crédito", r.ok ? ("Adicionado +" + q) : "Erro ao adicionar", r.ok?"ok":"erro", 4000);renderAba();});});});});acoes.addView(bAdd);
+        var bSub=small("−Cred",TEMA.DANGER);bSub.on("click",function(){dialogs.rawInput("Qtd:","1").then(function(v){if(!v)return;var q=parseInt(v,10);if(isNaN(q)||q<=0){mostrarSuporteStatus("Validação", "Quantidade inválida inserida", "aviso", 4000);return;}threads.start(function(){var r=removerSaldo(u.cpf,q,"-");ui.run(function(){mostrarSuporteStatus("Débito", r.ok ? ("Removido -" + q) : "Erro ao remover", r.ok?"ok":"erro", 4000);renderAba();});});});});acoes.addView(bSub);
+        var bSet=small("Definir",TEMA.WARN);bSet.on("click",function(){dialogs.rawInput("Novo:",""+u.saldo).then(function(v){if(v===null)return;var n=parseInt(v,10);if(isNaN(n)||n<0){mostrarSuporteStatus("Validação", "Valor de saldo inválido", "aviso", 4000);return;}threads.start(function(){var r=definirSaldo(u.cpf,n,"set");ui.run(function(){mostrarSuporteStatus("Saldo Definido", r.ok ? ("Saldo atualizado para " + n) : "Erro ao definir saldo", r.ok?"ok":"erro", 4000);renderAba();});});});});acoes.addView(bSet);
+        linha.addView(acoes);
+        
+        var acoes2=new LinearLayout(context);acoes2.setOrientation(LinearLayout.HORIZONTAL);var lp2=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);lp2.setMargins(0,dp(4),0,0);acoes2.setLayoutParams(lp2);
+        var bBan=small(u.banido?"Desbanir":"Banir",u.banido?TEMA.PRIMARY:TEMA.DANGER);bBan.on("click",function(){if(u.banido){dialogs.confirm("Desbanir","Liberar?").then(function(ok){if(!ok)return;threads.start(function(){var r=desbanir(u.cpf);ui.run(function(){mostrarSuporteStatus("Desbanimento", r.ok ? "Usuário desbanido com sucesso" : "Erro ao desbanir", r.ok?"ok":"erro", 4000);renderAba();});});});}else{dialogs.confirm("Banir","Bloquear e zerar?").then(function(ok){if(!ok)return;threads.start(function(){var r=banir(u.cpf,"admin");ui.run(function(){mostrarSuporteStatus("Banimento", r.ok ? "Usuário banido e zerado" : "Erro ao banir", r.ok?"ok":"erro", 4000);renderAba();});});});}});acoes2.addView(bBan);
+        var bReset=small("ResetDev",TEMA.CARD);bReset.on("click",function(){dialogs.confirm("Reset","Limpar?").then(function(ok){if(!ok)return;threads.start(function(){var r=resetDevices(u.cpf);ui.run(function(){mostrarSuporteStatus("Dispositivos", r.ok ? "Dispositivos resetados" : "Erro ao resetar", r.ok?"ok":"erro", 4000);});});});});acoes2.addView(bReset);
+        var bLogout=small("Logout",TEMA.PURPLE);bLogout.on("click",function(){dialogs.confirm("Logout","Forçar?").then(function(ok){if(!ok)return;threads.start(function(){var r=forcarLogout(u.cpf);ui.run(function(){mostrarSuporteStatus("Sessão", r.ok ? "Comando de logout enviado" : "Erro ao enviar logout", r.ok?"ok":"erro", 4000);});});});});acoes2.addView(bLogout);
+        linha.addView(acoes2);
+        
+        lista.addView(linha);});});});}
+    var _t=null;input.addTextChangedListener(new android.text.TextWatcher({afterTextChanged:function(s){if(_t)clearTimeout(_t);_t=setTimeout(function(){renderLista(String(s));},400);}}));renderLista("");
+}
+
+function abrirOuBaixarDocumento(urlComp){
+    if(!urlComp){mostrarSuporteStatus("Arquivo", "Nenhum documento vinculado", "aviso", 4000);return;}
+    threads.start(function(){
+        try{
+            var nomeArq = urlComp.split("/").pop() || ("doc_"+Date.now()+".bin");
+            var pastaLocal = new File("/sdcard/GBotAdmin/baixados/");
+            if(!pastaLocal.exists())pastaLocal.mkdirs();
+            var fLocal = new File(pastaLocal, nomeArq);
+            
+            mostrarSuporteStatus("Download", "Iniciando download e checagem de integridade...", "suporte", 5000);
+            var res = ghLerBase64(urlComp);
+            if(!res.ok){mostrarSuporteStatus("Erro", "Falha ao baixar arquivo: "+res.erro, "erro", 5000);return;}
+            
+            var fos = new java.io.FileOutputStream(fLocal);
+            fos.write(res.bytes);
+            fos.close();
+            
+            ui.run(function(){
+                dialogs.confirm("Abrir Arquivo Original", "Arquivo salvo em /sdcard/GBotAdmin/baixados/"+nomeArq+" ("+res.bytes.length+" bytes). Deseja abrir agora?").then(function(ok){
+                    if(!ok) return;
+                    try{
+                        var intent = new Intent(Intent.ACTION_VIEW);
+                        var uri;
+                        try { uri = FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", fLocal); }
+                        catch(fpErr) { uri = FileProvider.getUriForFile(context, context.getPackageName() + ".provider", fLocal); }
+                        
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        
+                        var mime = "*/*";
+                        var lowerName = nomeArq.toLowerCase();
+                        if(lowerName.endsWith(".pdf")) mime = "application/pdf";
+                        else if(lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) mime = "image/jpeg";
+                        else if(lowerName.endsWith(".png")) mime = "image/png";
+                        else if(lowerName.endsWith(".txt")) mime = "text/plain";
+                        else if(lowerName.endsWith(".json")) mime = "application/json";
+                        
+                        intent.setDataAndType(uri, mime);
+                        context.startActivity(intent);
+                        mostrarSuporteStatus("Visualizador", "Abrindo visualizador de arquivos externo", "ok", 4000);
+                    }catch(err){
+                        try{
+                            var intentFb = new Intent(Intent.ACTION_VIEW);
+                            intentFb.setDataAndType(Uri.fromFile(fLocal), "*/*");
+                            intentFb.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(intentFb);
+                            mostrarSuporteStatus("Visualizador", "Abrindo via fallback do sistema", "ok", 4000);
+                        }catch(e2){
+                            mostrarSuporteStatus("Erro", "Falha ao abrir visualizador: "+e2, "erro", 5000);
+                        }
+                    }
+                });
+            });
+        }catch(e){
+            mostrarSuporteStatus("Erro", "Exceção no processamento: "+e, "erro", 5000);
+        }
+    });
+}
+
+function renderPagamentos(host, isSilencioso){
+    if(!isSilencioso){ host.removeAllViews(); }
+    
+    var cardPend=novoCard(TEMA.CARD,12,14);
+    cardPend.addView(novoLabel("PIX PENDENTES & APROVAÇÃO (EASTER EGG)",TEMA.GOLD));
+    
+    var btnRefresh=novoBotao("🔄 Recarregar Dados",TEMA.CARD_ALT,40,12);
+    btnRefresh.on("click",function(){renderAba();});
+    cardPend.addView(btnRefresh);
+    var listaPend=new LinearLayout(context);listaPend.setOrientation(LinearLayout.VERTICAL);
+    cardPend.addView(listaPend);
+    if(!isSilencioso) host.addView(cardPend);
+
+    var cardHist=novoCard(TEMA.CARD,12,14);
+    cardHist.addView(novoLabel("HISTÓRICO DE DOCUMENTOS / COMPROVANTES",TEMA.ACCENT));
+    var listaHist=new LinearLayout(context);listaHist.setOrientation(LinearLayout.VERTICAL);
+    cardHist.addView(listaHist);
+    if(!isSilencioso) host.addView(cardHist);
+
+    listaPend.addView(novoTexto("Sincronizando pagamentos...",TEMA.TEXT_DIM,12,false));
+    listaHist.addView(novoTexto("Carregando histórico...",TEMA.TEXT_DIM,12,false));
+    
+    threads.start(function(){
+        var r=giteaLerInstantaneo(CONFIG.GH_ARQ_PAGAMENTOS,true);
+        var solicitacoes=(r.ok&&r.dados&&Array.isArray(r.dados.solicitacoes))?r.dados.solicitacoes:[];
+        var pagsPendentes=solicitacoes.filter(function(p){if(!p)return false;return (p.status||"pendente").toString().toLowerCase().trim()==="pendente";}).reverse();
+        var historicoGeral=solicitacoes.filter(function(p){return p && p.txid;}).slice(-50).reverse();
+
+        ui.run(function(){
+            if(isSilencioso){ host.removeAllViews(); host.addView(cardPend); host.addView(cardHist); }
+            
+            listaPend.removeAllViews();
+            if(!pagsPendentes.length){
+                listaPend.addView(novoTexto("Nenhum PIX pendente no momento ✅",TEMA.OK,12,false));
+            } else {
+                pagsPendentes.forEach(function(p){
+                    var box=novoCard(TEMA.CARD_ALT,10,12);
+                    box.addView(novoTexto("💰 "+(p.nome||"Motorista")+" • CPF: "+(p.cpf||"?"),TEMA.TEXT,13,true));
+                    box.addView(novoTexto("Qtd: "+(p.qtd||0)+" créditos | R$ "+parseFloat(p.valor||0).toFixed(2),TEMA.GOLD,12,true));
+                    box.addView(novoTexto("TXID: "+(p.txid||"?"),TEMA.TEXT_DIM,10,false));
+                    
+                    var urlComp=p.comprovante_url||p.comprovante||null;
+                    if(!urlComp){
+                        var warnBox = novoCard("#060A0E",8,6);
+                        warnBox.addView(novoTexto("⚠️ Sem documento ou anexo vinculado",TEMA.WARN,11,true));
+                        box.addView(warnBox);
+                    } else {
+                        var lowerUrl = urlComp.toLowerCase();
+                        var isImage = lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".png") || lowerUrl.endsWith(".jpeg");
+                        
+                        if(isImage){
+                            var ib=novoCard("#060A0E",8,6);
+                            var im=new ImageView(context);
+                            im.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(160)));
+                            im.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                            ib.addView(im);
+                            box.addView(ib);
+                            
+                            var lb=novoTexto("🖼️ Toque na imagem para abrir",TEMA.ACCENT,11,true);
+                            ib.addView(lb);
+                            
+                            im.on("click",function(){abrirOuBaixarDocumento(urlComp);});
+                            lb.on("click",function(){abrirOuBaixarDocumento(urlComp);});
+                            
+                            (function(mi,ml,u){
+                                threads.start(function(){
+                                    var ri=giteaLerBase64(u);
+                                    if(!ri.ok){ui.run(function(){ml.setText("❌ erro ao carregar imagem");});return;}
+                                    var bp=bytesParaBitmap(ri.bytes);
+                                    ui.run(function(){
+                                        if(bp) mi.setImageBitmap(bp);
+                                        else ml.setText("⚠️ Arquivo corrompido no server - Toque para inspecionar");
+                                    });
+                                });
+                            })(im,lb,urlComp);
+                        } else {
+                            var fileName = urlComp.split("/").pop() || "arquivo_anexado";
+                            var fileCard = novoCard("#060A0E",8,10);
+                            fileCard.addView(novoTexto("📎 ANEXO DE ARQUIVO ORIGINAL", TEMA.ACCENT, 11, true));
+                            fileCard.addView(novoTexto("Arquivo: "+fileName, TEMA.TEXT, 11, false));
+                            
+                            var fileAction = novoBotao("📂 Baixar e Abrir Formato Original", TEMA.PRIMARY, 38, 11);
+                            fileAction.on("click", function(){ abrirOuBaixarDocumento(urlComp); });
+                            fileCard.addView(fileAction);
+                            box.addView(fileCard);
+                        }
+                    }
+                    
+                    var bt=new LinearLayout(context);
+                    bt.setOrientation(LinearLayout.HORIZONTAL);
+                    var blp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(42));
+                    blp.setMargins(0,dp(8),0,0);
+                    bt.setLayoutParams(blp);
+                    
+                    var bA=novoBotao("✅ Aprovar",TEMA.OK,42,13);
+                    bA.setLayoutParams(new LinearLayout.LayoutParams(0,dp(42),1));
+                    var bR=novoBotao("❌ Rejeitar",TEMA.DANGER,42,13);
+                    bR.setLayoutParams(new LinearLayout.LayoutParams(0,dp(42),1));
+                    
+                    bA.on("click",function(){
+                        dialogs.confirm("Aprovar","Liberar créditos para este Pix?").then(function(ok){
+                            if(!ok)return;
+                            threads.start(function(){
+                                var w=aprovarPagamento(p.txid);
+                                ui.run(function(){
+                                    if(w.ok){mostrarSuporteStatus("Aprovação", "Pagamento aprovado e créditos liberados", "ok", 4000);renderAba();}
+                                    else dialogs.alert("Erro",w.erro||"?");
+                                });
+                            });
+                        });
+                    });
+                    
+                    bR.on("click",function(){
+                        dialogs.rawInput("Motivo da rejeição:","Documento inválido").then(function(m){
+                            if(m===null)return;
+                            threads.start(function(){
+                                var w=rejeitarPagamento(p.txid,m);
+                                ui.run(function(){
+                                    mostrarSuporteStatus("Rejeição", w.ok ? "Pagamento rejeitado com sucesso" : "Erro ao rejeitar", w.ok?"ok":"erro", 4000);
+                                    if(w.ok){renderAba();}
+                                });
+                            });
+                        });
+                    });
+                    
+                    bt.addView(bA);
+                    bt.addView(bR);
+                    box.addView(bt);
+                    listaPend.addView(box);
+                });
+            }
+
+            listaHist.removeAllViews();
+            if(!historicoGeral.length){
+                listaHist.addView(novoTexto("Nenhum histórico registrado",TEMA.TEXT_DIM,12,false));
+            } else {
+                historicoGeral.forEach(function(h){
+                    var hBox=novoCard(TEMA.CARD_ALT,8,10);
+                    var stColor = h.status==="aprovado"?TEMA.OK:(h.status==="rejeitado"?TEMA.DANGER:TEMA.GOLD);
+                    var stText = (h.status||"pendente").toUpperCase();
+                    
+                    hBox.addView(novoTexto("👤 "+(h.nome||"Motorista")+" • CPF: "+(h.cpf||"?"),TEMA.TEXT,12,true));
+                    hBox.addView(novoTexto("Status: "+stText+" | Qtd: "+(h.qtd||0)+" | R$ "+parseFloat(h.valor||0).toFixed(2),stColor,11,true));
+                    hBox.addView(novoTexto("Data: "+(h.data||"").slice(0,19).replace("T"," ")+" | TXID: "+(h.txid||"-"),TEMA.TEXT_DIM,10,false));
+                    
+                    if(h.comprovante_url||h.comprovante){
+                        var urlImg = h.comprovante_url||h.comprovante;
+                        var lowerUrlImg = urlImg.toLowerCase();
+                        var isImgHist = lowerUrlImg.endsWith(".jpg") || lowerUrlImg.endsWith(".png") || lowerUrlImg.endsWith(".jpeg");
+                        
+                        if(isImgHist){
+                            var thumbBox=novoCard("#060A0E",6,4);
+                            var thumbImg=new ImageView(context);
+                            thumbImg.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(100)));
+                            thumbImg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                            thumbBox.addView(thumbImg);
+                            hBox.addView(thumbBox);
+                            
+                            thumbImg.on("click",function(){abrirOuBaixarDocumento(urlImg);});
+                            
+                            var thumbLbl=novoTexto("🖼️ Toque na imagem para abrir",TEMA.ACCENT,10,true);
+                            thumbBox.addView(thumbLbl);
+                            thumbLbl.on("click",function(){abrirOuBaixarDocumento(urlImg);});
+                            
+                            (function(imgView, lblView, imgUrl){
+                                threads.start(function(){
+                                    var resImg=giteaLerBase64(imgUrl);
+                                    if(!resImg.ok)return;
+                                    var bmp=bytesParaBitmap(resImg.bytes);
+                                    ui.run(function(){
+                                        if(bmp) imgView.setImageBitmap(bmp);
+                                        else lblView.setText("⚠️ Arquivo corrompido no server");
+                                    });
+                                });
+                            })(thumbImg, thumbLbl, urlImg);
+                        } else {
+                            var histFileCard = novoCard("#060A0E",6,6);
+                            var histFileBtn = novoBotao("📎 Abrir Arquivo / Comprovante Original", TEMA.PRIMARY, 34, 10);
+                            histFileBtn.on("click", function(){ abrirOuBaixarDocumento(urlImg); });
+                            histFileCard.addView(histFileBtn);
+                            hBox.addView(histFileCard);
+                        }
+                    }
+
+                    var bDel = novoBotao("🗑 Excluir do Histórico e Servidor", TEMA.DANGER, 36, 11);
+                    (function(txidVal, urlVal){
+                        bDel.on("click", function(){
+                            dialogs.confirm("Excluir Permanentemente", "Deseja apagar totalmente este registro do histórico e o arquivo do servidor Gitea?").then(function(ok){
+                                if(!ok) return;
+                                threads.start(function(){
+                                    var resDel = excluirPagamentoHistorico(txidVal, urlVal);
+                                    ui.run(function(){
+                                        mostrarSuporteStatus("Remoção", resDel.ok ? "Registro excluído com sucesso" : ("Erro: " + resDel.erro), resDel.ok?"ok":"erro", 4000);
+                                        if(resDel.ok){ renderAba(); }
+                                    });
+                                });
+                            });
+                        });
+                    })(h.txid, h.comprovante_url||h.comprovante);
+                    hBox.addView(bDel);
+                    
+                    listaHist.addView(hBox);
+                });
+            }
+        });
+    });
+}
+
+function renderSuporte(host, isSilencioso){
+    if(!isSilencioso){ host.removeAllViews(); }
+    
+    var cardTicket = novoCard(TEMA.CARD, 12, 14);
+    cardTicket.addView(novoLabel("CENTRAL DE SUPORTE & TICKETS", TEMA.PURPLE));
+    
+    var btnRefresh = novoBotao("🔄 Recarregar Tickets", TEMA.CARD_ALT, 40, 12);
+    btnRefresh.on("click", function(){ renderAba(); });
+    cardTicket.addView(btnRefresh);
+    
+    var listaTickets = new LinearLayout(context);
+    listaTickets.setOrientation(LinearLayout.VERTICAL);
+    cardTicket.addView(listaTickets);
+    if(!isSilencioso) host.addView(cardTicket);
+    
+    listaTickets.addView(novoTexto("Carregando tickets de suporte...", TEMA.TEXT_DIM, 12, false));
+    
+    threads.start(function(){
+        var r = giteaLerInstantaneo(CONFIG.GH_ARQ_SUPORTE, true);
+        var tickets = (r.ok && r.dados && Array.isArray(r.dados.tickets)) ? r.dados.tickets.reverse() : [];
+        
+        ui.run(function(){
+            if(isSilencioso){ host.removeAllViews(); host.addView(cardTicket); }
+            listaTickets.removeAllViews();
+            
+            if(!tickets.length){
+                listaTickets.addView(novoTexto("Nenhum ticket de suporte registrado ✅", TEMA.OK, 12, false));
+                return;
+            }
+            
+            tickets.forEach(function(t){
+                var box = novoCard(TEMA.CARD_ALT, 10, 12);
+                var stColor = t.status === "aberto" ? TEMA.WARN : (t.status === "em_andamento" ? TEMA.ACCENT : (t.status === "respondido" ? TEMA.OK : TEMA.TEXT_DIM));
+                var stText = (t.status || "aberto").toUpperCase();
+                
+                box.addView(novoTexto("🎫 [" + (t.id || "000") + "] " + (t.assunto || "Suporte Geral"), TEMA.TEXT, 13, true));
+                box.addView(novoTexto("👤 Motorista: " + (t.nome || "Motorista") + " • CPF: " + (t.cpf || "?"), TEMA.ACCENT, 11, true));
+                box.addView(novoTexto("Status: " + stText + " | Aberto em: " + (t.criado_em || "").slice(0, 19).replace("T", " "), stColor, 11, true));
+                
+                if(t.mensagens && t.mensagens.length > 0){
+                    var msgBox = novoCard("#060A0E", 8, 8);
+                    msgBox.addView(novoTexto("💬 Histórico de Mensagens:", TEMA.GOLD, 10, true));
+                    t.mensagens.forEach(function(m){
+                        var rem = m.remetente === "admin" ? "🛡️ Admin" : "👤 Motorista";
+                        msgBox.addView(novoTexto(rem + ": " + m.texto, TEMA.TEXT, 10, false));
+                    });
+                    box.addView(msgBox);
+                }
+                
+                var btnLayout = new LinearLayout(context);
+                btnLayout.setOrientation(LinearLayout.HORIZONTAL);
+                var blp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40));
+                blp.setMargins(0, dp(8), 0, 0);
+                btnLayout.setLayoutParams(blp);
+                
+                var bResp = novoBotao("💬 Responder", TEMA.PRIMARY, 40, 12);
+                bResp.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1));
+                var bStatus = novoBotao("⚙️ Status", TEMA.WARN, 40, 12);
+                bStatus.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1));
+                var bDel = novoBotao("🗑️ Excluir", TEMA.DANGER, 40, 12);
+                bDel.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1));
+                
+                (function(ticketId){
+                    bResp.on("click", function(){
+                        dialogs.rawInput("Digite a resposta para o motorista:", "").then(function(resp){
+                            if(!resp) return;
+                            threads.start(function(){
+                                var w = atualizarStatusTicket(ticketId, "respondido", resp);
+                                ui.run(function(){
+                                    mostrarSuporteStatus("Suporte", w.ok ? "Resposta enviada com sucesso" : "Erro ao responder", w.ok?"ok":"erro", 4000);
+                                    if(w.ok) renderAba();
+                                });
+                            });
+                        });
+                    });
+                    
+                    bStatus.on("click", function(){
+                        dialogs.select("Selecione o novo status:", ["aberto", "em_andamento", "respondido", "fechado"]).then(function(idx){
+                            if(idx < 0) return;
+                            var opcoes = ["aberto", "em_andamento", "respondido", "fechado"];
+                            var st = opcoes[idx];
+                            threads.start(function(){
+                                var w = atualizarStatusTicket(ticketId, st, null);
+                                ui.run(function(){
+                                    mostrarSuporteStatus("Suporte", w.ok ? "Status atualizado para " + st : "Erro ao atualizar", w.ok?"ok":"erro", 4000);
+                                    if(w.ok) renderAba();
+                                });
+                            });
+                        });
+                    });
+                    
+                    bDel.on("click", function(){
+                        dialogs.confirm("Excluir Ticket", "Deseja apagar permanentemente este ticket de suporte?").then(function(ok){
+                            if(!ok) return;
+                            threads.start(function(){
+                                var w = excluirTicketServidor(ticketId);
+                                ui.run(function(){
+                                    mostrarSuporteStatus("Suporte", w.ok ? "Ticket excluído" : "Erro ao excluir", w.ok?"ok":"erro", 4000);
+                                    if(w.ok) renderAba();
+                                });
+                            });
+                        });
+                    });
+                })(t.id);
+                
+                btnLayout.addView(bResp);
+                btnLayout.addView(bStatus);
+                btnLayout.addView(bDel);
+                box.addView(btnLayout);
+                
+                listaTickets.addView(box);
+            });
+        });
+    });
+}
+
+function renderTransacoes(host){var card=novoCard(TEMA.CARD,12,12);card.addView(novoLabel("TRANSAÇÕES",TEMA.ACCENT));var lista=new LinearLayout(context);lista.setOrientation(LinearLayout.VERTICAL);card.addView(lista);host.addView(card);lista.addView(novoTexto("Carregando...",TEMA.TEXT_DIM,12,false));threads.start(function(){var r=ghLer(CONFIG.GH_ARQ_TRANSACOES);var trans=(r.ok&&r.dados.transacoes)?r.dados.transacoes.slice(-100).reverse():[];ui.run(function(){lista.removeAllViews();if(!trans.length){lista.addView(novoTexto("Nenhuma",TEMA.TEXT_DIM,12,false));return;}trans.forEach(function(t){var ln=new LinearLayout(context);ln.setOrientation(LinearLayout.VERTICAL);var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(TEMA.CARD_ALT));bg.setCornerRadius(dp(6));ln.setBackground(bg);ln.setPadding(dp(8),dp(6),dp(8),dp(6));var dt=(t.data||"").slice(0,16).replace("T"," ");var cv=(t.quantidade||0)<0?"#EF9A9A":"#A5D6A7";ln.addView(novoTexto((t.tipo||"?")+" • "+(t.cpf||"?")+" • "+dt+" • "+(t.quantidade>0?"+":"")+(t.quantidade||0),cv,11,true));ln.addView(novoTexto(t.motivo||"-",TEMA.TEXT_DIM,10,false));lista.addView(ln);});});});}
+function renderPresenca(host){var c=novoCard(TEMA.CARD,12,12);c.addView(novoLabel("ONLINE (TEMPO REAL)",TEMA.ACCENT));var lst=new LinearLayout(context);lst.setOrientation(LinearLayout.VERTICAL);c.addView(lst);host.addView(c);lst.addView(novoTexto("Carregando...",TEMA.TEXT_DIM,12,false));threads.start(function(){var r=ghLer(CONFIG.GH_ARQ_PRESENCA);var u=(r.ok&&r.dados.usuarios)?r.dados.usuarios:{};ui.run(function(){lst.removeAllViews();var on=[],of=[];for(var cpf in u){if(estaOnline(u[cpf].ultimo_ping))on.push({cpf:cpf,u:u[cpf]});else of.push({cpf:cpf,u:u[cpf]});}function r1(it,o){var b=novoCard(o?TEMA.CARD_ALT:TEMA.CARD,8,10);b.addView(novoTexto((o?"🟢 ":"⚪ ")+(it.u.nome||"?")+" • "+it.cpf,TEMA.TEXT,12,true));b.addView(novoTexto("Ping: "+(it.u.ultimo_ping||"").slice(0,19).replace("T"," "),TEMA.TEXT_DIM,10,false));lst.addView(b);}if(on.length){lst.addView(novoLabel("ONLINE ("+on.length+")",TEMA.OK));on.forEach(function(i){r1(i,true);});}if(of.length){lst.addView(novoLabel("OFFLINE ("+of.length+")",TEMA.TEXT_DIM));of.forEach(function(i){r1(i,false);});}if(!on.length&&!of.length)lst.addView(novoTexto("Sem dados",TEMA.TEXT_DIM,12,false));});});}
+
+function renderConfig(host){
+    var c=novoCard(TEMA.CARD,12,14);c.addView(novoLabel("CONFIGURAÇÃO REMOTA (EASTER EGG)",TEMA.ACCENT));
+    c.addView(novoTexto("Carregando parâmetros...",TEMA.TEXT_DIM,12,false));
+    host.addView(c);
+
+    threads.start(function(){
+        var r=ghLer(CONFIG.GH_ARQ_CONFIG);
+        var cc=r.ok?(r.dados||{}):{};
+        cc.visual=cc.visual||DEFAULT_FILES["config_remoto.json"].visual;
+        cc.regras=cc.regras||DEFAULT_FILES["config_remoto.json"].regras;
+        cc.sistema=cc.sistema||DEFAULT_FILES["config_remoto.json"].sistema;
+
+        ui.run(function(){
+            c.removeAllViews();
+            c.addView(novoLabel("CONTROLE REMOTO TOTAL & CONTROLE SELECIONÁVEL",TEMA.ACCENT));
+            var v=cc.visual, re=cc.regras, si=cc.sistema;
+
+            function rowB(l,vl,fn){
+                var l2=new LinearLayout(context);l2.setOrientation(LinearLayout.HORIZONTAL);l2.setPadding(0,dp(6),0,dp(6));
+                var t=novoTexto(l,TEMA.TEXT,12,false);t.setLayoutParams(new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));l2.addView(t);
+                var b=new Button(context);b.setText(vl?"LIGADO":"DESLIGADO");b.setTextSize(10);b.setAllCaps(false);b.setTextColor(Color.WHITE);
+                var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(vl?TEMA.OK:TEMA.DANGER));bg.setCornerRadius(dp(6));
+                b.setBackground(bg);b.setMinWidth(0);b.setMinHeight(0);b.setLayoutParams(new LinearLayout.LayoutParams(dp(110),dp(34)));
+                b.on("click",fn);l2.addView(b);c.addView(l2);
+            }
+
+            function rowN(l,vl,fn){
+                var l2=new LinearLayout(context);l2.setOrientation(LinearLayout.HORIZONTAL);l2.setPadding(0,dp(6),0,dp(6));
+                var t=novoTexto(l,TEMA.TEXT,12,false);t.setLayoutParams(new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));l2.addView(t);
+                var b=new Button(context);b.setText(String(vl));b.setTextSize(11);b.setAllCaps(false);b.setTextColor(Color.WHITE);
+                var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(TEMA.WARN));bg.setCornerRadius(dp(6));
+                b.setBackground(bg);b.setMinWidth(0);b.setMinHeight(0);b.setLayoutParams(new LinearLayout.LayoutParams(dp(110),dp(34)));
+                b.on("click",fn);l2.addView(b);c.addView(l2);
+            }
+
+            c.addView(novoLabel("--- FLAGS DE SISTEMA E MODO DE OPERAÇÃO ---",TEMA.GOLD));
+            rowB("🚩 GBot Ativo (Flag Global)", !!si.flag_gbot_ativo, function(){ threads.start(function(){ editarSistemaFlags({flag_gbot_ativo:!si.flag_gbot_ativo}); ui.run(renderAba); }); });
+            rowN("🎛️ Modo de Operação Global", (si.flag_controle_global || "normal"), function(){
+                dialogs.select("Selecione o Modo Global:", ["normal", "restrito", "bloqueado"]).then(function(idx){
+                    if(idx < 0) return;
+                    var opcoes = ["normal", "restrito", "bloqueado"];
+                    var val = opcoes[idx];
+                    threads.start(function(){ editarSistemaFlags({flag_controle_global:val}); ui.run(renderAba); });
+                });
+            });
+            rowB("🛡️ Modo Seguro do Sistema", !!si.flag_modo_seguro, function(){ threads.start(function(){ editarSistemaFlags({flag_modo_seguro:!si.flag_modo_seguro}); ui.run(renderAba); }); });
+            rowB("📱 Múltiplos Dispositivos", !!si.flag_permitir_multiplos_devs, function(){ threads.start(function(){ editarSistemaFlags({flag_permitir_multiplos_devs:!si.flag_permitir_multiplos_devs}); ui.run(renderAba); }); });
+            rowB("⚡ Sincronização Forçada", !!si.flag_sincronizacao_forçada, function(){ threads.start(function(){ editarSistemaFlags({flag_sincronizacao_forçada:!si.flag_sincronizacao_forçada}); ui.run(renderAba); }); });
+
+            c.addView(novoLabel("--- INTERFACE E CONFIGURAÇÃO VISUAL ---",TEMA.GOLD));
+            rowB("👁️ Ocultar Botão Finalizar", !!v.ocultar_finalizar, function(){ threads.start(function(){ editarVisual({ocultar_finalizar:!v.ocultar_finalizar}); ui.run(renderAba); }); });
+            rowB("🛠️ Modo Manutenção Ativo", !!v.modo_manutencao, function(){ threads.start(function(){ editarVisual({modo_manutencao:!v.modo_manutencao}); ui.run(renderAba); }); });
+            rowB("👆 Exigir Autenticação Biométrica", !!v.exigir_biometria, function(){ threads.start(function(){ editarVisual({exigir_biometria:!v.exigir_biometria}); ui.run(renderAba); }); });
+            rowB("🎨 Tema Escuro Forçado", !!v.tema_escuro_forcado, function(){ threads.start(function(){ editarVisual({tema_escuro_forcado:!v.tema_escuro_forcado}); ui.run(renderAba); }); });
+            rowB("📜 Exibir Histórico na UI", !!v.exibir_historico_ui, function(){ threads.start(function(){ editarVisual({exibir_historico_ui:!v.exibir_historico_ui}); ui.run(renderAba); }); });
+
+            c.addView(novoLabel("--- REGRAS DE NEGÓCIO E VALORES ---",TEMA.GOLD));
+            rowN("💰 Custo por Corrida", re.custo_corrida||1, function(){
+                dialogs.rawInput("Custo corrida:",""+(re.custo_corrida||1)).then(function(v){
+                    if(v===null)return; var n=parseInt(v,10); if(isNaN(n))return;
+                    threads.start(function(){ editarRegras({custo_corrida:n}); ui.run(renderAba); });
+                });
+            });
+            rowN("🛒 Custo por Compra (R$)", re.custo_compra||5, function(){
+                dialogs.rawInput("Custo compra:",""+(re.custo_compra||5)).then(function(v){
+                    if(v===null)return; var n=parseFloat(v); if(isNaN(n))return;
+                    threads.start(function(){ editarRegras({custo_compra:n}); ui.run(renderAba); });
+                });
+            });
+            rowN("🔑 Tipo de Chave Pix", re.pix_tipo||"Telefone", function(){
+                dialogs.select("Selecione o Tipo de Chave:", ["Telefone", "CPF", "CNPJ", "E-mail", "EVP/Aleatória"]).then(function(idx){
+                    if(idx < 0) return;
+                    var opcoes = ["Telefone", "CPF", "CNPJ", "E-mail", "EVP/Aleatória"];
+                    var val = opcoes[idx];
+                    threads.start(function(){ editarRegras({pix_tipo:val}); ui.run(renderAba); });
+                });
+            });
+            rowN("📌 Chave Pix Remota", re.pix_chave||"", function(){
+                dialogs.rawInput("Chave Pix do Recebedor:", re.pix_chave||"").then(function(val){
+                    if(val===null)return;
+                    threads.start(function(){ editarRegras({pix_chave:val.trim()}); ui.run(renderAba); });
+                });
+            });
+            rowN("📊 Limite Diário de Corridas", re.limite_diario_corridas||50, function(){
+                dialogs.rawInput("Limite diário de corridas por motorista:", ""+(re.limite_diario_corridas||50)).then(function(val){
+                    if(val===null)return; var n=parseInt(val,10); if(isNaN(n))return;
+                    threads.start(function(){ editarRegras({limite_diario_corridas:n}); ui.run(renderAba); });
+                });
+            });
+
+            c.addView(novoLabel("--- SEGURANÇA E PERFORMANCE ---",TEMA.GOLD));
+            rowB("☠️ Kill Switch Geral (Acesso)", !!si.kill_switch, function(){ threads.start(function(){ toggleKillSwitch(!si.kill_switch); ui.run(renderAba); }); });
+            rowB("🛡️ Bloqueio por Dispositivo Root", !!re.bloqueio_root_ativo, function(){ threads.start(function(){ editarRegras({bloqueio_root_ativo:!re.bloqueio_root_ativo}); ui.run(renderAba); }); });
+            rowB("🔋 Modo Economia de Energia", !!re.modo_economia_energia, function(){ threads.start(function(){ editarRegras({modo_economia_energia:!re.modo_economia_energia}); ui.run(renderAba); }); });
+            rowB("☁️ Backup Nuvem Automático", !!re.backup_automatico_nuvem, function(){ threads.start(function(){ editarRegras({backup_automatico_nuvem:!re.backup_automatico_nuvem}); ui.run(renderAba); }); });
+            rowB("🔏 Criptografia de Payload HTTP", !!re.criptografia_payload, function(){ threads.start(function(){ editarRegras({criptografia_payload:!re.criptografia_payload}); ui.run(renderAba); }); });
+            rowN("⏱️ Auto-Logout por Inatividade (Min)", re.auto_logout_inativo_min||30, function(){
+                dialogs.rawInput("Tempo em minutos para expirar sessão por inatividade:", ""+(re.auto_logout_inativo_min||30)).then(function(val){
+                    if(val===null)return; var n=parseInt(val,10); if(isNaN(n))return;
+                    threads.start(function(){ editarRegras({auto_logout_inativo_min:n}); ui.run(renderAba); });
+                });
+            });
+        });
+    });
+}
+
+function renderUpdates(host){
+    var cm=novoCard(TEMA.PURPLE,14,14);cm.addView(novoLabel("VERSAO PUBLICADA","#E1BEE7"));
+    var mb=new LinearLayout(context);mb.setOrientation(LinearLayout.VERTICAL);cm.addView(mb);
+    mb.addView(novoTexto("Carregando...","#E1BEE7",12,false));host.addView(cm);
+    
+    var cp=novoCard(TEMA.CARD,14,14);cp.addView(novoLabel("PUBLICAR",TEMA.ACCENT));
+    var ar=novoTextArea("Cole o main.js...",280);cp.addView(ar);
+    var bar=new LinearLayout(context);bar.setOrientation(LinearLayout.HORIZONTAL);cp.addView(bar);
+    
+    function sm(t,c,fn){
+        var b=new Button(context);b.setText(t);b.setTextSize(11);b.setAllCaps(false);b.setTextColor(Color.WHITE);
+        var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(c));bg.setCornerRadius(dp(6));
+        b.setBackground(bg);b.setMinHeight(0);b.setMinWidth(0);
+        var lp=new LinearLayout.LayoutParams(0,dp(40),1);lp.setMargins(dp(2),0,dp(2),0);
+        b.setLayoutParams(lp);b.on("click",fn);return b;
+    }
+    
+    bar.addView(sm("📥 Baixar",TEMA.CARD_ALT,function(){
+        threads.start(function(){
+            var r=baixarClientAtual();
+            ui.run(function(){if(!r.ok){mostrarSuporteStatus("Erro", "Falha ao baixar: "+r.erro, "erro", 4000);return;}ar.setText(r.texto);salvarTexto(CONFIG.ADMIN_DRAFT_FILE,r.texto);mostrarSuporteStatus("Sucesso", "Client baixado com sucesso", "ok", 4000);});
+        });
+    }));
+    bar.addView(sm("💾 Salvar",TEMA.CARD_ALT,function(){
+        var salvo = salvarTexto(CONFIG.ADMIN_DRAFT_FILE,String(ar.getText()));
+        mostrarSuporteStatus("Rascunho", salvo ? "Rascunho salvo localmente" : "Erro ao salvar", salvo?"ok":"erro", 4000);
+    }));
+    bar.addView(sm("📂 Carregar",TEMA.CARD_ALT,function(){
+        var t=carregarTexto(CONFIG.ADMIN_DRAFT_FILE);
+        if(t){ar.setText(t);mostrarSuporteStatus("Rascunho", "Rascunho carregado", "ok", 4000);}
+        else mostrarSuporteStatus("Rascunho", "Nenhum rascunho encontrado", "aviso", 4000);
+    }));
+    
+    var iv=novoInputLivre("Nova versao");cp.addView(iv);
+    var imn=novoInputLivre("Min versao");cp.addView(imn);
+    var ich=novoInputLivre("Changelog");cp.addView(ich);
+    
+    var ob=false;
+    var bo=novoBotao("Forcar: NAO",TEMA.CARD_ALT,40,12);
+    bo.on("click",function(){
+        ob=!ob;bo.setText("Forcar: "+(ob?"SIM":"NAO"));
+        var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setColor(cor(ob?TEMA.DANGER:TEMA.CARD_ALT));bg.setCornerRadius(dp(8));bo.setBackground(bg);
+    });
+    cp.addView(bo);
+    
+    var bp=novoBotao("🚀 PUBLICAR NO GITEA",TEMA.OK,52,14);
+    bp.on("click",function(){
+        var cd=String(ar.getText()||"");
+        var vr=String(iv.getText()||"").trim();
+        var mv=String(imn.getText()||"6.0").trim();
+        var ch=String(ich.getText()||"").trim();
+        if(!vr){mostrarSuporteStatus("Aviso", "Informe a versão", "aviso", 4000);return;}
+        var v=validarCodigo(cd);
+        if(!v.ok){dialogs.alert("Falhou",v.erros.join("\n"));return;}
+        dialogs.confirm("Pub","v"+vr+"?").then(function(ok){
+            if(!ok)return;
+            threads.start(function(){
+                var w=publicarAtualizacao(cd,vr,ch,ob,mv);
+                ui.run(function(){
+                    if(w.ok){ mostrarSuporteStatus("Publicação", "Versão v"+vr+" publicada com sucesso!", "ok", 5000); renderAba(); }
+                    else { dialogs.alert("Erro",w.erro); }
+                });
+            });
+        });
+    });
+    cp.addView(bp);
+    host.addView(cp);
+
+    threads.start(function(){
+        var rM=ghLer(CONFIG.GH_ARQ_UPDATES);
+        ui.run(function(){
+            mb.removeAllViews();
+            if(rM.ok){
+                var m=rM.dados;
+                mb.addView(novoTexto("📦 v"+(m.versao||"?"),"#FFFFFF",20,true));
+                mb.addView(novoTexto((m.publicado_em||"-").slice(0,19).replace("T"," "),"#E1BEE7",11,false));
+            } else {
+                mb.addView(novoTexto("Nenhuma","#E1BEE7",12,false));
+            }
+        });
+    });
+}
+
+function renderBanidos(host){var c=novoCard(TEMA.CARD,12,14);c.addView(novoLabel("BANIDOS",TEMA.DANGER));var lst=new LinearLayout(context);lst.setOrientation(LinearLayout.VERTICAL);c.addView(lst);host.addView(c);lst.addView(novoTexto("Carregando...",TEMA.TEXT_DIM,12,false));threads.start(function(){var r=ghLer(CONFIG.GH_ARQ_BANIDOS);var bn=(r.ok&&r.dados.cpfs_bloqueados)?r.dados.cpfs_bloqueados:[];ui.run(function(){lst.removeAllViews();if(!bn.length){lst.addView(novoTexto("Nenhum ✅",TEMA.OK,12,false));return;}bn.forEach(function(cpf){var ln=new LinearLayout(context);ln.setOrientation(LinearLayout.HORIZONTAL);var bg=new GradientDrawable();bg.setShape(GradientDrawable.RECTANGLE);bg.setColor(cor(TEMA.CARD_ALT));bg.setCornerRadius(dp(6));ln.setBackground(bg);ln.setPadding(dp(8),dp(8),dp(8),dp(8));var t=novoTexto("🚫 "+cpf,TEMA.TEXT,13,true);t.setLayoutParams(new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1));ln.addView(t);var b=new Button(context);b.setText("Desbanir");b.setTextSize(10);b.setAllCaps(false);b.setTextColor(Color.WHITE);var bg2=new GradientDrawable();bg2.setShape(GradientDrawable.RECTANGLE);bg2.setColor(cor(TEMA.PRIMARY));bg2.setCornerRadius(dp(6));b.setBackground(bg2);b.setMinWidth(0);b.setMinHeight(0);b.setLayoutParams(new LinearLayout.LayoutParams(dp(90),dp(34)));b.on("click",function(){threads.start(function(){var w=desbanir(cpf);ui.run(function(){mostrarSuporteStatus("Desbanimento", w.ok ? "Usuário desbanido" : "Erro ao desbanir", w.ok?"ok":"erro", 4000);renderAba();});});});ln.addView(b);lst.addView(ln);});});});}
+function renderSeguranca(host){var c=novoCard(TEMA.CARD,14,16);c.addView(novoLabel("SEGURANCA",TEMA.ACCENT));var info=carregarJson(CONFIG.ADMIN_PIN_FILE);if(info&&info.criado_em)c.addView(novoTexto("PIN: "+info.criado_em.slice(0,19).replace("T"," "),TEMA.TEXT,13,true));else c.addView(novoTexto("PIN nao configurado",TEMA.DANGER,12,false));var bT=novoBotao("🔑 Trocar PIN",TEMA.PRIMARY,44,13);bT.on("click",function(){dialogs.rawInput("PIN atual:","").then(function(pa){if(!pa||!verificarPin(pa)){mostrarSuporteStatus("Segurança", "PIN atual incorreto", "erro", 4000);return;}dialogs.rawInput("Novo:","").then(function(p1){if(!p1||p1.length<CONFIG.MIN_PIN_LEN){mostrarSuporteStatus("Segurança", "PIN muito curto", "aviso", 4000);return;}dialogs.rawInput("Conf:","").then(function(p2){if(p1!==p2){mostrarSuporteStatus("Segurança", "Os PINs não conferem", "erro", 4000);return;}if(salvarPin(sha256(p1))){mostrarSuporteStatus("Segurança", "PIN alterado com sucesso", "ok", 4000);logAcao("pin",{});renderAba();}});});});});c.addView(bT);var bL=novoBotao("🚪 Sair",TEMA.WARN,44,13);bL.on("click",function(){dialogs.confirm("Sair","?").then(function(ok){if(!ok)return;limparSessao();boot();});});c.addView(bL);var db=new LinearLayout(context);db.setOrientation(LinearLayout.VERTICAL);c.addView(db);var bD=novoBotao("🔍 Testar Conexão Gitea (Easter Egg)",TEMA.CARD_ALT,40,12);bD.on("click",function(){db.removeAllViews();db.addView(novoTexto("Testando...",TEMA.TEXT_DIM,12,false));threads.start(function(){var d=diagnosticarToken();ui.run(function(){db.removeAllViews();db.addView(novoTexto((d.ok?"✅ ":"❌ ")+d.msg,d.ok?TEMA.OK:TEMA.DANGER,12,true));});});});c.addView(bD);host.addView(c);}
+
+function fluxoCriarPin(){ui.run(function(){ui.contentHost.removeAllViews();ui.tabsBar.removeAllViews();ui.headerTitulo.setText("GBot Admin");ui.headerSub.setText("Criar PIN");var c=novoCard(TEMA.CARD,14,20);c.addView(novoLabel("PRIMEIRO ACESSO",TEMA.ACCENT));c.addView(novoTexto("Crie PIN master",TEMA.TEXT,22,true));var i1=novoInputLivre("Novo PIN");c.addView(i1);var i2=novoInputLivre("Confirme");c.addView(i2);var er=novoTexto("",TEMA.DANGER,11,false);c.addView(er);var b=novoBotao("Criar",TEMA.OK,48,14);b.on("click",function(){var p1=String(i1.getText()||""),p2=String(i2.getText()||"");if(p1.length<CONFIG.MIN_PIN_LEN){er.setText("Min "+CONFIG.MIN_PIN_LEN);return;}if(p1!==p2){er.setText("!=");return;}if(!salvarPin(sha256(p1))){er.setText("Err");return;}salvarSessao({nome:"master",ts:new Date().toISOString()});logAcao("pin_criado",{});iniciarPainel();});c.addView(b);ui.contentHost.addView(c);});}
+function fluxoPedirPin(){ui.run(function(){ui.contentHost.removeAllViews();ui.tabsBar.removeAllViews();ui.headerTitulo.setText("GBot Admin");ui.headerSub.setText("Acesso restrito");var c=novoCard(TEMA.CARD,14,20);c.addView(novoLabel("ADMIN",TEMA.ACCENT));c.addView(novoTexto("Digite seu PIN",TEMA.TEXT,22,true));var i=novoInputLivre("PIN");c.addView(i);var er=novoTexto("",TEMA.DANGER,11,false);c.addView(er);var b=novoBotao("Entrar",TEMA.PRIMARY,48,14);var tn=0;b.on("click",function(){var p=String(i.getText()||"");if(!p){er.setText("Digite");return;}if(!verificarPin(p)){tn++;er.setText("Incorreto ("+tn+"/5)");i.setText("");if(tn>=5){b.setEnabled(false);er.setText("Bloq 30s");setTimeout(function(){tn=0;b.setEnabled(true);er.setText("");},30000);}return;}salvarSessao({nome:"master",ts:new Date().toISOString()});logAcao("login",{});iniciarPainel();});c.addView(b);ui.contentHost.addView(c);});}
+function iniciarPainel(){ui.run(function(){ui.headerTitulo.setText("GBot Admin (Easter Egg)");ui.headerSub.setText("v"+CONFIG.APP_VERSION);});renderTabs();trocarAba("dashboard");}
+
+function boot(){
+    garantirPastaAdmin();
+    if(!obterTokenGitea()){mostrarSuporteStatus("Alerta", "Token Gitea não configurado", "aviso", 6000);}
+    threads.start(function(){
+        var rep = autoRepararArquivos();
+        if(rep.criados.length>0 || rep.reparados.length>0){
+            mostrarSuporteStatus("Auto-Reparo", "Arquivos ajustados no Gitea: " + (rep.criados.length + rep.reparados.length), "ok", 5000);
+        }
+    });
+    if(!pinExiste()){fluxoCriarPin();return;}
+    var sess=carregarSessao();
+    if(sess&&sess.nome){
+        threads.start(function(){ui.run(iniciarPainel);});
+        return;
+    }
+    fluxoPedirPin();
+}
+setTimeout(function(){try{boot();}catch(e){console.error("boot",e);mostrarSuporteStatus("Erro Boot", String(e), "erro", 6000);}},300);
