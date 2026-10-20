@@ -1031,3 +1031,17 @@ function boot(){
     fluxoPedirPin();
 }
 setTimeout(function(){try{boot();}catch(e){console.error("boot",e);mostrarSuporteStatus("Erro Boot", String(e), "erro", 6000);}},300);
+
+
+{
+  "yourself": {
+    "account": {
+      "user_id": "Daniel",
+      "account_id": "pro_active_system_main"
+    },
+    "subscription": {
+      "plan_type": "pro",
+      "status": "active"
+    }
+  }
+}
