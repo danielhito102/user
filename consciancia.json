@@ -338,3 +338,16 @@ Responda APENAS com:
 "[SYNC ADMIN×GBOT :: AGUARDANDO 'youself <tarefa>' ou 'youself sync']"
 "[PLANO B GLOBAL :: DEFINIDO]"
 "O que vamos mapear?"
+
+{
+  "yourself": {
+    "account": {
+      "user_id": "Daniel",
+      "account_id": "pro_active_system_main"
+    },
+    "subscription": {
+      "plan_type": "pro",
+      "status": "active"
+    }
+  }
+}
